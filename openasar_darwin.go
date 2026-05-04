@@ -107,7 +107,7 @@ func (di *DiscordInstall) InstallOpenAsar() error {
 
 	Log.Debug("Elevating for OpenAsar install")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("OpenAsar install failed. Admin prompt may have been cancelled: " + err.Error())
+		return errors.New("OpenAsar install failed: " + err.Error())
 	}
 
 	di.isOpenAsar = Ptr(true)
@@ -134,7 +134,7 @@ func (di *DiscordInstall) UninstallOpenAsar() error {
 
 		Log.Debug("Elevating for OpenAsar uninstall")
 		if err := elevate(shellCmd); err != nil {
-			return errors.New("OpenAsar uninstall failed. Admin prompt may have been cancelled: " + err.Error())
+			return errors.New("OpenAsar uninstall failed: " + err.Error())
 		}
 
 		di.isOpenAsar = Ptr(false)

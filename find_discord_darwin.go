@@ -7,6 +7,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -64,11 +65,42 @@ func FindDiscords() []any {
 	return discords
 }
 
-// elevate runs a shell command via osascript with administrator privileges.
-// This shows the native macOS password dialog and avoids relying on FDA.
+// fixScriptPath is a known path left on disk when elevation fails so the user
+// can run it manually from Terminal: sudo sh /tmp/vencord-fix.sh
+const fixScriptPath = "/tmp/vencord-fix.sh"
+
+// elevate writes shellCmd to a temp script file, then runs it via osascript
+// with administrator privileges. Writing to a file avoids quoting the whole
+// command inside the AppleScript string and lets us capture real stderr.
+// On failure the script is kept at fixScriptPath for manual Terminal fallback.
 func elevate(shellCmd string) error {
-	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, strings.ReplaceAll(shellCmd, `"`, `\"`))
-	return exec.Command("osascript", "-e", script).Run()
+	script := "#!/bin/sh\nset -e\n" + shellCmd + "\n"
+	if err := os.WriteFile(fixScriptPath, []byte(script), 0700); err != nil {
+		return fmt.Errorf("failed to write elevation script: %w", err)
+	}
+
+	osa := `do shell script "sh ` + shellQuote(fixScriptPath) + `" with administrator privileges`
+	cmd := exec.Command("osascript", "-e", osa)
+	out, runErr := cmd.CombinedOutput()
+
+	if runErr == nil {
+		os.Remove(fixScriptPath)
+		return nil
+	}
+
+	msg := strings.TrimSpace(string(out))
+
+	// -128 is AppleScript's user-cancelled error code
+	if strings.Contains(msg, "-128") || strings.Contains(strings.ToLower(msg), "cancel") {
+		os.Remove(fixScriptPath)
+		return errors.New("password prompt was cancelled")
+	}
+
+	// Keep the script for manual fallback and include real error + instructions
+	if msg == "" {
+		msg = runErr.Error()
+	}
+	return fmt.Errorf("%s\n\nIf you see 'Operation not permitted', App Management is blocking this.\nRun manually in Terminal:\n  sudo sh %s", msg, fixScriptPath)
 }
 
 // shellQuote wraps a path in single quotes, escaping any embedded single quotes.

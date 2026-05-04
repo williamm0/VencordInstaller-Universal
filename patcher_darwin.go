@@ -65,7 +65,7 @@ func patchAppAsar(dir string, isSystemElectron bool) error {
 
 	Log.Debug("Elevating for patch file operations")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("Patch failed. Admin prompt may have been cancelled: " + err.Error())
+		return errors.New("Patch failed: " + err.Error())
 	}
 	return nil
 }
@@ -97,7 +97,7 @@ func unpatchAppAsar(dir string, isSystemElectron bool) error {
 
 	Log.Debug("Elevating for unpatch file operations")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("Unpatch failed. Admin prompt may have been cancelled: " + err.Error())
+		return errors.New("Unpatch failed: " + err.Error())
 	}
 	return nil
 }
