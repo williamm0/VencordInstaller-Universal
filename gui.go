@@ -173,9 +173,8 @@ func handleErr(di *DiscordInstall, err error, action string) {
 		case "windows":
 			err = errors.New("Permission denied. Make sure your Discord is fully closed (from the tray)!")
 		case "darwin":
-			// FIXME: This text is not selectable which is a bit mehhh
-			command := "sudo chown -R \"${USER}:wheel\" " + di.path
-			err = errors.New("Permission denied. Please grant the installer Full Disk Access in the system settings (privacy & security page).\n\nIf that also doesn't work, try running the following command in your terminal:\n" + command)
+			command := "sudo chown -R \"${USER}:staff\" " + di.path + " && sudo chmod -R u+w " + di.path
+			err = errors.New("Permission denied. The admin password prompt may have been cancelled or failed.\n\nYou can fix this manually by running the following command in Terminal:\n" + command)
 		default:
 			err = errors.New("Permission denied. Maybe try running me as Administrator/Root?")
 		}

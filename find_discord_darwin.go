@@ -7,7 +7,9 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	path "path/filepath"
 	"strings"
 )
@@ -62,10 +64,41 @@ func FindDiscords() []any {
 	return discords
 }
 
-func PreparePatch(di *DiscordInstall) {}
+// elevate runs a shell command via osascript with administrator privileges.
+// This shows the native macOS password dialog and avoids relying on FDA.
+func elevate(shellCmd string) error {
+	script := fmt.Sprintf(`do shell script "%s" with administrator privileges`, strings.ReplaceAll(shellCmd, `"`, `\"`))
+	return exec.Command("osascript", "-e", script).Run()
+}
 
-func FixOwnership(_ string) error {
-	return nil
+// shellQuote wraps a path in single quotes, escaping any embedded single quotes.
+func shellQuote(p string) string {
+	return "'" + strings.ReplaceAll(p, "'", "'\\''") + "'"
+}
+
+// PreparePatch fixes ownership and write permissions on the Discord Resources
+// directory using an admin elevation dialog so FDA is not needed.
+func PreparePatch(di *DiscordInstall) {
+	resourcesDir := path.Join(di.appPath, "..")
+	currentUser := os.Getenv("USER")
+	if currentUser == "" {
+		currentUser = "$(id -un)"
+	}
+	quoted := shellQuote(resourcesDir)
+	shellCmd := fmt.Sprintf("chown -R %s:staff %s && chmod -R u+w %s", currentUser, quoted, quoted)
+	if err := elevate(shellCmd); err != nil {
+		Log.Warn("PreparePatch elevation prompt failed or was cancelled:", err)
+	}
+}
+
+func FixOwnership(p string) error {
+	currentUser := os.Getenv("USER")
+	if currentUser == "" {
+		currentUser = "$(id -un)"
+	}
+	quoted := shellQuote(p)
+	shellCmd := fmt.Sprintf("chown -R %s:staff %s && chmod -R u+w %s", currentUser, quoted, quoted)
+	return elevate(shellCmd)
 }
 
 func CheckScuffedInstall() bool {
