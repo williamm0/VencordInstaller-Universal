@@ -1,68 +1,74 @@
-# Vencord Installer (Universal macOS Build)
+# VencordInstaller Universal
 
-This is a fork of the [Vencord Installer](https://github.com/Vencord/Installer) with a universal macOS binary that runs natively on both Apple Silicon (arm64) and Intel (x86_64) without Rosetta 2.
+A fork of [Vencord/Installer](https://github.com/Vencord/Installer) that runs natively on both Apple Silicon and Intel Macs, with a full fix for the App Management permission errors that block the official build on macOS 13 (Ventura) and later.
 
-The Vencord Installer allows you to install [Vencord, the cutest Discord Desktop client mod](https://github.com/Vendicated/Vencord)
+## What is this
 
-![image](https://user-images.githubusercontent.com/45497981/226734476-5fb42420-844d-4e27-ae06-4799118e086e.png)
+[Vencord](https://github.com/Vendicated/Vencord) is a Discord client mod. This installer puts it in and takes it out. The official installer ships Intel-only and breaks on modern macOS due to App Management restrictions. This fork fixes both.
 
-## Usage
+## Download
 
-See https://vencord.dev/download
+**[Releases](https://github.com/williamm0/VencordInstaller-Universal/releases/latest)**
+
+Download `VencordInstaller.MacOS.universal.zip`, unzip it, and move `VencordInstaller.app` to `/Applications`.
+
+> If macOS says the app is damaged or from an unidentified developer, right-click the app and choose Open, then click Open again in the dialog.
+
+## What is fixed
+
+**Universal binary.** The official release is Intel-only and runs under Rosetta 2 on Apple Silicon. This build is a fat binary containing both `arm64` and `x86_64` slices so it runs natively on both.
+
+**App Management permission errors on macOS 13+.** Apple introduced the App Management privacy category in macOS Ventura. It blocks any process that does not have an explicit TCC grant from modifying apps in `/Applications`, even as root. The official installer asks for Full Disk Access, but FDA is not sufficient and unsigned apps cannot reliably receive either grant.
+
+This fork routes all install and uninstall operations through `Terminal.app`, which has App Management and Full Disk Access permissions by default. When you click Install or Uninstall:
+
+1. A Terminal window opens
+2. You may be prompted for your Mac password
+3. The operations run, the window closes automatically
+4. The installer shows the result
+
+No changes to System Settings are required. If you previously added VencordInstaller to Full Disk Access or App Management, you can remove it.
 
 ## Building from source
 
-### Prerequisites 
-
-You need to install the [Go programming language](https://go.dev/doc/install) and GCC, the GNU Compiler Collection (MinGW on Windows)
-
-<details>
-<summary>Additionally, if you're using Linux, you have to install some additional dependencies:</summary>
-
-#### Base dependencies
-```sh
-apt install -y pkg-config libsdl2-dev libglx-dev libgl1-mesa-dev
-dnf install pkg-config libGL-devel libXxf86vm-devel
-```
-
-#### X11 dependencies
-```sh
-apt install -y xorg-dev
-dnf install libXcursor-devel libXi-devel libXinerama-devel libXrandr-devel
-```
-
-#### Wayland dependencies
-```sh
-apt install -y libwayland-dev libxkbcommon-dev wayland-protocols extra-cmake-modules
-dnf install wayland-devel libxkbcommon-devel wayland-protocols-devel extra-cmake-modules
-```
-
-</details>
-
-### Building
-
-#### Install dependencies
+Requires [Go](https://go.dev/doc/install) and `pkg-config` + `sdl2` (via Homebrew on macOS).
 
 ```sh
+brew install pkg-config sdl2
 go mod tidy
 ```
 
-#### Build the GUI
+### macOS universal binary
 
-##### Windows / Mac / Linux X11
 ```sh
-go build
+# arm64
+CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+  go build -tags static -o VencordInstaller_arm64
+
+# amd64
+CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+  CGO_CFLAGS="-arch x86_64" CGO_LDFLAGS="-arch x86_64" \
+  go build -tags static -o VencordInstaller_amd64
+
+# combine
+lipo -create VencordInstaller_arm64 VencordInstaller_amd64 \
+  -output VencordInstaller
 ```
 
-##### Linux Wayland
+Then package it:
+
 ```sh
-go build --tags wayland
+mkdir -p VencordInstaller.app/Contents/{MacOS,Resources}
+cp macos/Info.plist VencordInstaller.app/Contents/
+cp VencordInstaller    VencordInstaller.app/Contents/MacOS/
+cp macos/icon.icns     VencordInstaller.app/Contents/Resources/
+zip -r VencordInstaller.MacOS.universal.zip VencordInstaller.app
 ```
 
-#### Build the CLI
-```
-go build --tags cli
-```
+### Other platforms
 
-You might want to pass some flags to this command to get a better build.
-See [the GitHub workflow](https://github.com/Vendicated/VencordInstaller/blob/main/.github/workflows/release.yml) for what flags I pass or if you want more precise instructions
+See the [GitHub Actions workflow](.github/workflows/release.yml) for Linux and Windows build steps. Linux and Windows builds are unchanged from upstream.
+
+## Credits
+
+Vencord and the original installer are by [Vendicated](https://github.com/Vendicated) and contributors. This fork adds macOS-specific fixes only.
