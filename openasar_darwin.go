@@ -59,15 +59,10 @@ func (di *DiscordInstall) IsOpenAsar() (retBool bool) {
 		return false
 	}
 
-	if bytes.Contains(b, []byte("OpenAsar")) {
-		return true
-	}
-
-	return false
+	return bytes.Contains(b, []byte("OpenAsar"))
 }
 
-// InstallOpenAsar downloads OpenAsar to a temp path, then installs it using a
-// single admin elevation. This avoids App Management and FDA TCC restrictions.
+// InstallOpenAsar downloads OpenAsar to /tmp, then installs it via Terminal.
 func (di *DiscordInstall) InstallOpenAsar() error {
 	dir := path.Join(di.appPath, "..")
 	asarFile, err := FindAsarFile(dir)
@@ -97,25 +92,34 @@ func (di *DiscordInstall) InstallOpenAsar() error {
 	tmp.Close()
 
 	backupPath := path.Join(dir, "app.asar.backup")
-	shellCmd := fmt.Sprintf(
-		"mv %s %s && cp %s %s && chown $(stat -f '%%Su:%%Sg' %s) %s && rm -f %s",
-		shellQuote(asarFile.Name()), shellQuote(backupPath),
-		shellQuote(tmpPath), shellQuote(asarFile.Name()),
-		shellQuote(backupPath), shellQuote(asarFile.Name()),
-		shellQuote(tmpPath),
+	shellCmd := fmt.Sprintf(`
+CURRENT=%s
+BACKUP=%s
+TEMP=%s
+UNDO=1
+cleanup() {
+    if [ "$UNDO" = "1" ]; then
+        [ -f "$BACKUP" ] && [ ! -f "$CURRENT" ] && mv "$BACKUP" "$CURRENT" 2>/dev/null || true
+    fi
+    rm -f "$TEMP"
+}
+trap cleanup EXIT
+mv "$CURRENT" "$BACKUP"
+cp "$TEMP" "$CURRENT"
+chown "$(stat -f '%%Su:%%Sg' "$BACKUP")" "$CURRENT"
+UNDO=0`,
+		shellQuote(asarFile.Name()), shellQuote(backupPath), shellQuote(tmpPath),
 	)
 
-	Log.Debug("Elevating for OpenAsar install")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("OpenAsar install failed: " + err.Error())
+		return fmt.Errorf("OpenAsar install failed: %w", err)
 	}
 
 	di.isOpenAsar = Ptr(true)
 	return nil
 }
 
-// UninstallOpenAsar restores the original asar from the backup using a single
-// admin elevation.
+// UninstallOpenAsar restores the original asar from the backup via Terminal.
 func (di *DiscordInstall) UninstallOpenAsar() error {
 	dir := path.Join(di.appPath, "..")
 
@@ -132,9 +136,8 @@ func (di *DiscordInstall) UninstallOpenAsar() error {
 
 		shellCmd := fmt.Sprintf("mv %s %s", shellQuote(backupFile), shellQuote(asarFile.Name()))
 
-		Log.Debug("Elevating for OpenAsar uninstall")
 		if err := elevate(shellCmd); err != nil {
-			return errors.New("OpenAsar uninstall failed: " + err.Error())
+			return fmt.Errorf("OpenAsar uninstall failed: %w", err)
 		}
 
 		di.isOpenAsar = Ptr(false)

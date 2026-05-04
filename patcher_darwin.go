@@ -9,69 +9,88 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	path "path/filepath"
 )
 
-// patchAppAsar writes a new app.asar to a temp path, then performs all
-// renames inside a single osascript elevation (one password prompt total).
-// This bypasses both App Management and Full Disk Access TCC restrictions.
+// patchAppAsar writes the Vencord loader asar to a temp path (no permissions
+// needed for /tmp), then runs a single elevated shell script via Terminal.app
+// that renames the original app.asar to _app.asar and puts the new one in
+// place. A trap-based cleanup restores the original if any step fails.
 func patchAppAsar(dir string, isSystemElectron bool) error {
 	appAsar := path.Join(dir, "app.asar")
 	_appAsar := path.Join(dir, "_app.asar")
 
-	tmpAsar, err := os.CreateTemp("", "vencord-*.asar")
+	tmp, err := os.CreateTemp("", "vencord-*.asar")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	tmpPath := tmpAsar.Name()
-	tmpAsar.Close()
+	tmpPath := tmp.Name()
+	tmp.Close()
 	defer os.Remove(tmpPath)
 
-	Log.Debug("Writing custom app.asar to temp path", tmpPath)
+	Log.Debug("Writing Vencord asar to", tmpPath)
 	if err := WriteAppAsar(tmpPath, VencordDirectory); err != nil {
 		return err
 	}
 
-	// Build a single shell command that does all file ops as root in one prompt.
-	// Using && so a failure stops the chain; the undo branch restores the backup
-	// if cp fails after the initial mv.
 	var shellCmd string
 	if isSystemElectron {
-		from := appAsar + ".unpacked"
-		to := _appAsar + ".unpacked"
-		shellCmd = fmt.Sprintf(
-			"mv %s %s && mv %s %s && { cp %s %s && chown $(stat -f '%%Su:%%Sg' %s) %s || { mv %s %s; mv %s %s; exit 1; }; } && rm -f %s",
+		unpackedOrig := appAsar + ".unpacked"
+		unpackedBak := _appAsar + ".unpacked"
+		shellCmd = fmt.Sprintf(`
+ORIG=%s
+BACKUP=%s
+UNPACKED_ORIG=%s
+UNPACKED_BACKUP=%s
+TEMP=%s
+UNDO=1
+cleanup() {
+    if [ "$UNDO" = "1" ]; then
+        [ -f "$BACKUP" ] && [ ! -f "$ORIG" ] && mv "$BACKUP" "$ORIG" 2>/dev/null || true
+        [ -f "$UNPACKED_BACKUP" ] && [ ! -f "$UNPACKED_ORIG" ] && mv "$UNPACKED_BACKUP" "$UNPACKED_ORIG" 2>/dev/null || true
+    fi
+    rm -f "$TEMP"
+}
+trap cleanup EXIT
+mv "$ORIG" "$BACKUP"
+mv "$UNPACKED_ORIG" "$UNPACKED_BACKUP"
+cp "$TEMP" "$ORIG"
+chown "$(stat -f '%%Su:%%Sg' "$BACKUP")" "$ORIG"
+UNDO=0`,
 			shellQuote(appAsar), shellQuote(_appAsar),
-			shellQuote(from), shellQuote(to),
-			shellQuote(tmpPath), shellQuote(appAsar),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(to), shellQuote(from),
+			shellQuote(unpackedOrig), shellQuote(unpackedBak),
 			shellQuote(tmpPath),
 		)
 	} else {
-		shellCmd = fmt.Sprintf(
-			"mv %s %s && { cp %s %s && chown $(stat -f '%%Su:%%Sg' %s) %s || { mv %s %s; exit 1; }; } && rm -f %s",
-			shellQuote(appAsar), shellQuote(_appAsar),
-			shellQuote(tmpPath), shellQuote(appAsar),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(tmpPath),
+		shellCmd = fmt.Sprintf(`
+ORIG=%s
+BACKUP=%s
+TEMP=%s
+UNDO=1
+cleanup() {
+    if [ "$UNDO" = "1" ]; then
+        [ -f "$BACKUP" ] && [ ! -f "$ORIG" ] && mv "$BACKUP" "$ORIG" 2>/dev/null || true
+    fi
+    rm -f "$TEMP"
+}
+trap cleanup EXIT
+mv "$ORIG" "$BACKUP"
+cp "$TEMP" "$ORIG"
+chown "$(stat -f '%%Su:%%Sg' "$BACKUP")" "$ORIG"
+UNDO=0`,
+			shellQuote(appAsar), shellQuote(_appAsar), shellQuote(tmpPath),
 		)
 	}
 
-	Log.Debug("Elevating for patch file operations")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("Patch failed: " + err.Error())
+		return fmt.Errorf("patch failed: %w", err)
 	}
 	return nil
 }
 
-// unpatchAppAsar restores the original app.asar from _app.asar using a single
-// elevated shell command so only one password prompt is shown.
+// unpatchAppAsar restores the original app.asar from _app.asar via Terminal.
 func unpatchAppAsar(dir string, isSystemElectron bool) error {
 	appAsar := path.Join(dir, "app.asar")
 	appAsarTmp := path.Join(dir, "app.asar.tmp")
@@ -79,25 +98,53 @@ func unpatchAppAsar(dir string, isSystemElectron bool) error {
 
 	var shellCmd string
 	if isSystemElectron {
-		shellCmd = fmt.Sprintf(
-			"mv %s %s && mv %s %s && mv %s %s && rm -f %s",
-			shellQuote(appAsar), shellQuote(appAsarTmp),
-			shellQuote(_appAsar+".unpacked"), shellQuote(appAsar+".unpacked"),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(appAsarTmp),
+		shellCmd = fmt.Sprintf(`
+ORIG=%s
+TMP=%s
+BACKUP=%s
+UNPACKED_ORIG=%s
+UNPACKED_BACKUP=%s
+UNDO=1
+cleanup() {
+    if [ "$UNDO" = "1" ]; then
+        [ -f "$TMP" ] && [ ! -f "$ORIG" ] && mv "$TMP" "$ORIG" 2>/dev/null || true
+        rm -f "$TMP"
+    else
+        rm -f "$TMP"
+    fi
+}
+trap cleanup EXIT
+mv "$ORIG" "$TMP"
+mv "$UNPACKED_BACKUP" "$UNPACKED_ORIG"
+mv "$BACKUP" "$ORIG"
+UNDO=0`,
+			shellQuote(appAsar), shellQuote(appAsarTmp), shellQuote(_appAsar),
+			shellQuote(appAsar+".unpacked"), shellQuote(_appAsar+".unpacked"),
 		)
 	} else {
-		shellCmd = fmt.Sprintf(
-			"mv %s %s && mv %s %s && rm -f %s",
-			shellQuote(appAsar), shellQuote(appAsarTmp),
-			shellQuote(_appAsar), shellQuote(appAsar),
-			shellQuote(appAsarTmp),
+		shellCmd = fmt.Sprintf(`
+ORIG=%s
+TMP=%s
+BACKUP=%s
+UNDO=1
+cleanup() {
+    if [ "$UNDO" = "1" ]; then
+        [ -f "$TMP" ] && [ ! -f "$ORIG" ] && mv "$TMP" "$ORIG" 2>/dev/null || true
+        rm -f "$TMP"
+    else
+        rm -f "$TMP"
+    fi
+}
+trap cleanup EXIT
+mv "$ORIG" "$TMP"
+mv "$BACKUP" "$ORIG"
+UNDO=0`,
+			shellQuote(appAsar), shellQuote(appAsarTmp), shellQuote(_appAsar),
 		)
 	}
 
-	Log.Debug("Elevating for unpatch file operations")
 	if err := elevate(shellCmd); err != nil {
-		return errors.New("Unpatch failed: " + err.Error())
+		return fmt.Errorf("unpatch failed: %w", err)
 	}
 	return nil
 }

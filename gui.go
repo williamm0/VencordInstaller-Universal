@@ -173,7 +173,7 @@ func handleErr(di *DiscordInstall, err error, action string) {
 		case "windows":
 			err = errors.New("Permission denied. Make sure your Discord is fully closed (from the tray)!")
 		case "darwin":
-			err = errors.New("Permission denied. The admin prompt failed or was blocked by App Management.\n\nCheck the error details above. If a fix script was saved, run it in Terminal:\n  sudo sh /tmp/vencord-fix.sh\n\nOr manually run:\n  sudo chown -R \"${USER}:staff\" " + di.path + " && sudo chmod -R u+w " + di.path)
+			err = errors.New("Permission denied. Make sure Discord is fully closed (check the menu bar), then try again.\n\nIf the problem persists, reinstall Discord from discord.com/download.")
 		default:
 			err = errors.New("Permission denied. Maybe try running me as Administrator/Root?")
 		}

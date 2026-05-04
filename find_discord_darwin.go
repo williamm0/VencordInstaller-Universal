@@ -7,12 +7,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	path "path/filepath"
 	"strings"
+	"time"
 )
 
 var macosNames = map[string]string{
@@ -65,58 +65,73 @@ func FindDiscords() []any {
 	return discords
 }
 
-// fixScriptPath is a known path left on disk when elevation fails so the user
-// can run it manually from Terminal: sudo sh /tmp/vencord-fix.sh
-const fixScriptPath = "/tmp/vencord-fix.sh"
+const (
+	// fixScriptPath holds the shell script written before each operation.
+	fixScriptPath = "/tmp/vencord-fix.sh"
+	// successMarkerPath is created by the script on success; absence means failure.
+	successMarkerPath = "/tmp/vencord-done"
+)
 
-// elevate writes shellCmd to a temp script file, then runs it via osascript
-// with administrator privileges. Writing to a file avoids quoting the whole
-// command inside the AppleScript string and lets us capture real stderr.
-// On failure the script is kept at fixScriptPath for manual Terminal fallback.
+// elevate runs shellCmd as root via Terminal.app.
+//
+// Terminal.app has the App Management and Full Disk Access TCC permissions
+// that are required to modify app bundles in /Applications on macOS 13+.
+// The osascript "with administrator privileges" approach does NOT work because
+// the root shell it spawns is still subject to App Management restrictions.
+//
+// The script is written to fixScriptPath and a success marker is written to
+// successMarkerPath when the script finishes cleanly. We poll for that marker
+// from Go so no Terminal output needs to be parsed.
 func elevate(shellCmd string) error {
-	script := "#!/bin/sh\nset -e\n" + shellCmd + "\n"
+	os.Remove(successMarkerPath)
+
+	script := "#!/bin/sh\nset -e\n" + shellCmd + "\ntouch " + successMarkerPath + "\n"
 	if err := os.WriteFile(fixScriptPath, []byte(script), 0700); err != nil {
 		return fmt.Errorf("failed to write elevation script: %w", err)
 	}
 
-	osa := `do shell script "sh ` + shellQuote(fixScriptPath) + `" with administrator privileges`
-	cmd := exec.Command("osascript", "-e", osa)
-	out, runErr := cmd.CombinedOutput()
+	// Open a Terminal window that runs the script with sudo.
+	// When the sudo command exits (success or failure), the shell returns to
+	// the prompt and "is busy" becomes false, ending the repeat loop.
+	// The window is then closed automatically.
+	osa := `tell application "Terminal"
+	activate
+	set w to do script "sudo sh '/tmp/vencord-fix.sh'; exit"
+	repeat while w is busy
+		delay 0.5
+	end repeat
+	delay 0.5
+	try
+		close (window of w) without saving
+	end try
+end tell`
 
-	if runErr == nil {
-		os.Remove(fixScriptPath)
-		return nil
+	if err := exec.Command("osascript", "-e", osa).Run(); err != nil {
+		return fmt.Errorf("could not open Terminal: %w", err)
 	}
 
-	msg := strings.TrimSpace(string(out))
-
-	// -128 is AppleScript's user-cancelled error code
-	if strings.Contains(msg, "-128") || strings.Contains(strings.ToLower(msg), "cancel") {
-		os.Remove(fixScriptPath)
-		return errors.New("password prompt was cancelled")
+	// Poll for the marker the script writes on clean completion.
+	// Typical completion is well under 10 seconds; 5 minutes is the hard limit.
+	for i := 0; i < 600; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if _, err := os.Stat(successMarkerPath); err == nil {
+			os.Remove(successMarkerPath)
+			os.Remove(fixScriptPath)
+			return nil
+		}
 	}
 
-	// Keep the script for manual fallback and include real error + instructions
-	if msg == "" {
-		msg = runErr.Error()
-	}
-	return fmt.Errorf("%s\n\nIf you see 'Operation not permitted', App Management is blocking this.\nRun manually in Terminal:\n  sudo sh %s", msg, fixScriptPath)
+	return fmt.Errorf("timed out waiting for operation to finish. Make sure Discord is fully closed, then try again")
 }
 
-// shellQuote wraps a path in single quotes, escaping any embedded single quotes.
+// shellQuote wraps p in single quotes, escaping any embedded single quotes.
 func shellQuote(p string) string {
 	return "'" + strings.ReplaceAll(p, "'", "'\\''") + "'"
 }
 
-// PreparePatch is a no-op on macOS. Elevation is handled inside each
-// file operation (patchAppAsar, unpatchAppAsar, Install/UninstallOpenAsar)
-// via a single osascript admin prompt, bypassing App Management and FDA.
+// PreparePatch is a no-op on macOS; elevation is handled per-operation.
 func PreparePatch(_ *DiscordInstall) {}
 
-func FixOwnership(_ string) error {
-	return nil
-}
+func FixOwnership(_ string) error { return nil }
 
-func CheckScuffedInstall() bool {
-	return false
-}
+func CheckScuffedInstall() bool { return false }
