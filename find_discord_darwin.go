@@ -76,29 +76,13 @@ func shellQuote(p string) string {
 	return "'" + strings.ReplaceAll(p, "'", "'\\''") + "'"
 }
 
-// PreparePatch fixes ownership and write permissions on the Discord Resources
-// directory using an admin elevation dialog so FDA is not needed.
-func PreparePatch(di *DiscordInstall) {
-	resourcesDir := path.Join(di.appPath, "..")
-	currentUser := os.Getenv("USER")
-	if currentUser == "" {
-		currentUser = "$(id -un)"
-	}
-	quoted := shellQuote(resourcesDir)
-	shellCmd := fmt.Sprintf("chown -R %s:staff %s && chmod -R u+w %s", currentUser, quoted, quoted)
-	if err := elevate(shellCmd); err != nil {
-		Log.Warn("PreparePatch elevation prompt failed or was cancelled:", err)
-	}
-}
+// PreparePatch is a no-op on macOS. Elevation is handled inside each
+// file operation (patchAppAsar, unpatchAppAsar, Install/UninstallOpenAsar)
+// via a single osascript admin prompt, bypassing App Management and FDA.
+func PreparePatch(_ *DiscordInstall) {}
 
-func FixOwnership(p string) error {
-	currentUser := os.Getenv("USER")
-	if currentUser == "" {
-		currentUser = "$(id -un)"
-	}
-	quoted := shellQuote(p)
-	shellCmd := fmt.Sprintf("chown -R %s:staff %s && chmod -R u+w %s", currentUser, quoted, quoted)
-	return elevate(shellCmd)
+func FixOwnership(_ string) error {
+	return nil
 }
 
 func CheckScuffedInstall() bool {

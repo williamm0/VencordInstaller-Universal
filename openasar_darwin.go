@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build darwin
 
 /*
  * SPDX-License-Identifier: GPL-3.0
@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -65,19 +66,15 @@ func (di *DiscordInstall) IsOpenAsar() (retBool bool) {
 	return false
 }
 
+// InstallOpenAsar downloads OpenAsar to a temp path, then installs it using a
+// single admin elevation. This avoids App Management and FDA TCC restrictions.
 func (di *DiscordInstall) InstallOpenAsar() error {
-	PreparePatch(di)
-
 	dir := path.Join(di.appPath, "..")
 	asarFile, err := FindAsarFile(dir)
 	if err != nil {
 		return err
 	}
 	_ = asarFile.Close()
-
-	if err = os.Rename(asarFile.Name(), path.Join(dir, "app.asar.backup")); err != nil {
-		return err
-	}
 
 	res, err := http.Get(OpenAsarDownloadLink)
 	if err != nil {
@@ -86,27 +83,44 @@ func (di *DiscordInstall) InstallOpenAsar() error {
 		return errors.New("Failed to fetch OpenAsar - " + strconv.Itoa(res.StatusCode) + ": " + res.Status)
 	}
 
-	outFile, err := os.Create(asarFile.Name())
+	tmp, err := os.CreateTemp("", "openasar-*.asar")
 	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err = io.Copy(tmp, res.Body); err != nil {
+		tmp.Close()
 		return err
 	}
+	tmp.Close()
 
-	if _, err = io.Copy(outFile, res.Body); err != nil {
-		return err
+	backupPath := path.Join(dir, "app.asar.backup")
+	shellCmd := fmt.Sprintf(
+		"mv %s %s && cp %s %s && chown $(stat -f '%%Su:%%Sg' %s) %s && rm -f %s",
+		shellQuote(asarFile.Name()), shellQuote(backupPath),
+		shellQuote(tmpPath), shellQuote(asarFile.Name()),
+		shellQuote(backupPath), shellQuote(asarFile.Name()),
+		shellQuote(tmpPath),
+	)
+
+	Log.Debug("Elevating for OpenAsar install")
+	if err := elevate(shellCmd); err != nil {
+		return errors.New("OpenAsar install failed. Admin prompt may have been cancelled: " + err.Error())
 	}
 
 	di.isOpenAsar = Ptr(true)
 	return nil
 }
 
+// UninstallOpenAsar restores the original asar from the backup using a single
+// admin elevation.
 func (di *DiscordInstall) UninstallOpenAsar() error {
-	PreparePatch(di)
-
 	dir := path.Join(di.appPath, "..")
-	// .original is our old name
-	// OpenAsar's updater uses .backup, so we now also use that - .original is deprecated
-	for _, file := range []string{path.Join(dir, "app.asar.backup"), path.Join(dir, "app.asar.original")} {
-		if !ExistsFile(file) {
+
+	for _, backupFile := range []string{path.Join(dir, "app.asar.backup"), path.Join(dir, "app.asar.original")} {
+		if !ExistsFile(backupFile) {
 			continue
 		}
 
@@ -116,8 +130,11 @@ func (di *DiscordInstall) UninstallOpenAsar() error {
 		}
 		_ = asarFile.Close()
 
-		if err = os.Rename(file, asarFile.Name()); err != nil {
-			return err
+		shellCmd := fmt.Sprintf("mv %s %s", shellQuote(backupFile), shellQuote(asarFile.Name()))
+
+		Log.Debug("Elevating for OpenAsar uninstall")
+		if err := elevate(shellCmd); err != nil {
+			return errors.New("OpenAsar uninstall failed. Admin prompt may have been cancelled: " + err.Error())
 		}
 
 		di.isOpenAsar = Ptr(false)
