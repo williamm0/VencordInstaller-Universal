@@ -69,6 +69,12 @@ zip -r VencordInstaller.MacOS.universal.zip VencordInstaller.app
 
 See the [GitHub Actions workflow](.github/workflows/release.yml) for Linux and Windows build steps. Linux and Windows builds are unchanged from upstream.
 
-## Credits
+## Credits and copyright
 
-Vencord and the original installer are by [Vendicated](https://github.com/Vendicated) and contributors. This fork adds macOS-specific fixes only.
+**VencordInstaller** is created and maintained by [Vendicated](https://github.com/Vendicated) and the [Vencord contributors](https://github.com/Vencord/Installer/graphs/contributors).
+
+**Vencord** is created and maintained by [Vendicated](https://github.com/Vendicated) and the [Vencord contributors](https://github.com/Vendicated/Vencord/graphs/contributors).
+
+All original source code is copyright (c) 2023 Vendicated and Vencord contributors and is licensed under the [GNU General Public License v3.0](LICENSE).
+
+This fork is maintained by [williamm0](https://github.com/williamm0) and contributes only the macOS-specific changes described above. No claim is made over the original work. All credit for the installer and Vencord itself belongs to the original authors.
