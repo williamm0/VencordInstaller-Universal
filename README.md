@@ -73,6 +73,7 @@ See the [GitHub Actions workflow](.github/workflows/release.yml) for Linux and W
 ### VirusTotal
 
 [Installer](https://www.virustotal.com/gui/file/6d575a3fc78a5ff2b23f34d4dc795f118bb38c7d35e6dc77de912f692a78dd91/detection)
+
 [Repo](https://www.virustotal.com/gui/file/e501db1237fa177a069a33f5905740d43ee1126aeb64c9f8dc833fad735f9e93?nocache=1)
 
 ## Credits and copyright
