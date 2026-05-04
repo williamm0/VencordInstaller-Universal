@@ -1,6 +1,7 @@
 # VencordInstaller Universal
 
 A fork of [Vencord/Installer](https://github.com/Vencord/Installer) that runs natively on both Apple Silicon and Intel Macs, with a full fix for the App Management permission errors that block the official build on macOS 13 (Ventura) and later.
+<img width="2500" height="1080" alt="Vencord-Universal" src="https://github.com/user-attachments/assets/4de4b4d7-aa31-4f4b-b2d9-bb3148e6fe69" />
 
 ## What is this
 
