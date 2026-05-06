@@ -12,11 +12,13 @@ import (
 	"bytes"
 	_ "embed"
 	"errors"
-	g "github.com/AllenDang/giu"
-	"github.com/AllenDang/imgui-go"
 	"image"
 	"image/color"
 	"vencordinstaller/buildinfo"
+
+	g "github.com/AllenDang/giu"
+	"github.com/AllenDang/imgui-go"
+
 	// png decoder for icon
 	_ "image/png"
 	"os"
@@ -173,7 +175,9 @@ func handleErr(di *DiscordInstall, err error, action string) {
 		case "windows":
 			err = errors.New("Permission denied. Make sure your Discord is fully closed (from the tray)!")
 		case "darwin":
-			err = errors.New("Permission denied. Make sure Discord is fully closed (check the menu bar), then try again.\n\nIf the problem persists, reinstall Discord from discord.com/download.")
+			// FIXME: This text is not selectable which is a bit mehhh
+			command := "sudo chown -R \"${USER}:wheel\" " + di.path
+			err = errors.New("Permission denied. Please grant the installer Full Disk Access in the system settings (privacy & security page).\n\nIf that also doesn't work, try running the following command in your terminal:\n" + command)
 		default:
 			err = errors.New("Permission denied. Maybe try running me as Administrator/Root?")
 		}
@@ -265,6 +269,21 @@ func makeAutoComplete() []any {
 func makeRadioOnChange(i int) func() {
 	return func() {
 		radioIdx = i
+	}
+}
+
+func renderFilesDirErr() g.Widget {
+	return g.Layout{
+		g.Dummy(0, 50),
+		g.Style().
+			SetColor(g.StyleColorText, DiscordRed).
+			SetFontSize(30).
+			To(
+				g.Align(g.AlignCenter).To(
+					g.Label("Error: Failed to create: "+FilesDirErr.Error()),
+					g.Label("Resolve this error, then restart me!"),
+				),
+			),
 	}
 }
 
@@ -625,13 +644,13 @@ func loop() {
 			g.Dummy(0, 20),
 			g.Style().SetFontSize(20).To(
 				g.Row(
-					g.Label(Ternary(IsDevInstall, "Dev Install: ", "Vencord will be downloaded to: ")+VencordDirectory),
+					g.Label(Ternary(IsDevInstall, "Dev Install: ", "Vencord will be downloaded to: ")+FilesDir),
 					g.Style().
 						SetColor(g.StyleColorButton, DiscordBlue).
 						SetStyle(g.StyleVarFramePadding, 4, 4).
 						To(
 							g.Button("Open Directory").OnClick(func() {
-								g.OpenURL("file://" + path.Dir(VencordDirectory))
+								g.OpenURL("file://" + FilesDir)
 							}),
 						),
 				),
@@ -654,7 +673,11 @@ func loop() {
 				},
 			),
 
-			renderInstaller(),
+			&CondWidget{
+				predicate:  FilesDirErr != nil,
+				ifWidget:   renderFilesDirErr,
+				elseWidget: renderInstaller,
+			},
 		)
 
 	g.PopStyle()

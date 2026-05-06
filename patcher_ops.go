@@ -49,7 +49,7 @@ func patchAppAsar(dir string, isSystemElectron bool) (err error) {
 	}
 
 	Log.Debug("Writing custom app.asar to", appAsar)
-	if err := WriteAppAsar(appAsar, VencordDirectory); err != nil {
+	if err := WriteAppAsar(appAsar, Patcher); err != nil {
 		return err
 	}
 

@@ -15,9 +15,10 @@ import (
 	"strings"
 )
 
-
 var BaseDir string
-var VencordDirectory string
+var FilesDir string
+var FilesDirErr error
+var Patcher string
 
 func init() {
 	if dir := os.Getenv("VENCORD_USER_DATA_DIR"); dir != "" {
@@ -30,13 +31,16 @@ func init() {
 		Log.Debug("Using UserConfig")
 		BaseDir = appdir.New("Vencord").UserConfig()
 	}
-
-	if dir := os.Getenv("VENCORD_DIRECTORY"); dir != "" {
-		Log.Debug("Using VENCORD_DIRECTORY")
-		VencordDirectory = dir
-	} else {
-		VencordDirectory = path.Join(BaseDir, "vencord.asar")
+	FilesDir = path.Join(BaseDir, "dist")
+	if !ExistsFile(FilesDir) {
+		FilesDirErr = os.MkdirAll(FilesDir, 0755)
+		if FilesDirErr != nil {
+			Log.Error("Failed to create", FilesDir, FilesDirErr)
+		} else {
+			FilesDirErr = FixOwnership(BaseDir)
+		}
 	}
+	Patcher = path.Join(FilesDir, "patcher.js")
 }
 
 type DiscordInstall struct {
@@ -50,9 +54,6 @@ type DiscordInstall struct {
 }
 
 //region Patch
-
-// patchAppAsar and unpatchAppAsar are defined in patcher_ops.go (non-darwin)
-// and patcher_darwin.go (darwin) via build tags.
 
 func (di *DiscordInstall) patch() error {
 	Log.Info("Patching " + di.path + "...")
@@ -97,14 +98,14 @@ func (di *DiscordInstall) patch() error {
 			}
 		}
 
-		Log.Debug("This is a flatpak. Trying to grant the Flatpak access to", VencordDirectory+"...")
+		Log.Debug("This is a flatpak. Trying to grant the Flatpak access to", FilesDir+"...")
 
 		isSystemFlatpak := strings.HasPrefix(di.path, "/var")
 		var args []string
 		if !isSystemFlatpak {
 			args = append(args, "--user")
 		}
-		args = append(args, "override", name, "--filesystem="+VencordDirectory)
+		args = append(args, "override", name, "--filesystem="+FilesDir)
 		fullCmd := "flatpak " + strings.Join(args, " ")
 
 		Log.Debug("Running", fullCmd)
@@ -125,7 +126,7 @@ func (di *DiscordInstall) patch() error {
 			err = cmd.Run()
 		}
 		if err != nil {
-			return errors.New("Failed to grant Discord Flatpak access to " + VencordDirectory + ": " + err.Error())
+			return errors.New("Failed to grant Discord Flatpak access to " + FilesDir + ": " + err.Error())
 		}
 	}
 	return nil
@@ -134,8 +135,6 @@ func (di *DiscordInstall) patch() error {
 //endregion
 
 // region Unpatch
-
-// unpatchAppAsar defined in patcher_ops.go (non-darwin) and patcher_darwin.go (darwin).
 
 func (di *DiscordInstall) unpatch() error {
 	Log.Info("Unpatching " + di.path + "...")

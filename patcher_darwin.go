@@ -31,7 +31,7 @@ func patchAppAsar(dir string, isSystemElectron bool) error {
 	defer os.Remove(tmpPath)
 
 	Log.Debug("Writing Vencord asar to", tmpPath)
-	if err := WriteAppAsar(tmpPath, VencordDirectory); err != nil {
+	if err := WriteAppAsar(tmpPath, Patcher); err != nil {
 		return err
 	}
 
