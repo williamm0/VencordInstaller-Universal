@@ -1,38 +1,44 @@
 # VencordInstaller Universal
 
-A fork of [Vencord/Installer](https://github.com/Vencord/Installer) that runs natively on both Apple Silicon and Intel Macs, with a full fix for the App Management permission errors that block the official build on macOS 13 (Ventura) and later.
+A fork of [Vencord/Installer](https://github.com/Vencord/Installer) that runs natively on both Apple Silicon and Intel Macs, with a fix for the App Management permission errors that can block the official build on macOS 13 Ventura and later.
+
+This is an unofficial fork. Vencord is a Discord client mod, so use it only if you understand the risks and Discord's rules.
+
 <img width="2500" height="1080" alt="Vencord-Universal" src="https://github.com/user-attachments/assets/4de4b4d7-aa31-4f4b-b2d9-bb3148e6fe69" />
-
-## What is this
-
-[Vencord](https://github.com/Vendicated/Vencord) is a Discord client mod. This installer puts it in and takes it out. The official installer ships Intel-only and breaks on modern macOS due to App Management restrictions. This fork fixes both.
 
 ## Download
 
-**[Releases](https://github.com/williamm0/VencordInstaller-Universal/releases/latest)**
+Download the latest build from [Releases](https://github.com/williamm0/VencordInstaller-Universal/releases/latest).
 
 Download `VencordInstaller.MacOS.universal.zip`, unzip it, and move `VencordInstaller.app` to `/Applications`.
 
-> If macOS says the app is damaged or from an unidentified developer, right-click the app and choose Open, then click Open again in the dialog.
+If macOS says the app is damaged or from an unidentified developer, right-click the app and choose Open, then click Open again in the dialog.
 
-## What is fixed
+## What this fixes
 
-**Universal binary.** The official release is Intel-only and runs under Rosetta 2 on Apple Silicon. This build is a fat binary containing both `arm64` and `x86_64` slices so it runs natively on both.
+### Universal binary
 
-**App Management permission errors on macOS 13+.** Apple introduced the App Management privacy category in macOS Ventura. It blocks any process that does not have an explicit TCC grant from modifying apps in `/Applications`, even as root. The official installer asks for Full Disk Access, but FDA is not sufficient and unsigned apps cannot reliably receive either grant.
+The official release is Intel-only and runs under Rosetta 2 on Apple Silicon. This build is a fat binary containing both `arm64` and `x86_64` slices, so it runs natively on both Apple Silicon and Intel Macs.
 
-This fork routes all install and uninstall operations through `Terminal.app`, which has App Management and Full Disk Access permissions by default. When you click Install or Uninstall:
+### App Management permission errors on macOS 13+
 
-1. A Terminal window opens
-2. You may be prompted for your Mac password
-3. The operations run, the window closes automatically
-4. The installer shows the result
+Apple introduced the App Management privacy category in macOS Ventura. It can block processes from modifying apps in `/Applications`, even when running as root, unless the process has the right TCC grant.
 
-No changes to System Settings are required. If you previously added VencordInstaller to Full Disk Access or App Management, you can remove it.
+This fork routes install and uninstall operations through `Terminal.app`, which normally already has the permissions needed for these operations. When you click Install or Uninstall:
+
+1. A Terminal window opens.
+2. You may be prompted for your Mac password.
+3. The operation runs.
+4. The window closes automatically.
+5. The installer shows the result.
+
+No changes to System Settings should be required. If you previously added VencordInstaller to Full Disk Access or App Management, you can remove it.
 
 ## Building from source
 
-Requires [Go](https://go.dev/doc/install) and `pkg-config` + `sdl2` (via Homebrew on macOS).
+Requires [Go](https://go.dev/doc/install), `pkg-config`, and `sdl2`.
+
+On macOS:
 
 ```sh
 brew install pkg-config sdl2
@@ -56,7 +62,7 @@ lipo -create VencordInstaller_arm64 VencordInstaller_amd64 \
   -output VencordInstaller
 ```
 
-Then package it:
+Package it:
 
 ```sh
 mkdir -p VencordInstaller.app/Contents/{MacOS,Resources}
@@ -70,7 +76,7 @@ zip -r VencordInstaller.MacOS.universal.zip VencordInstaller.app
 
 See the [GitHub Actions workflow](.github/workflows/release.yml) for Linux and Windows build steps. Linux and Windows builds are unchanged from upstream.
 
-### VirusTotal
+## VirusTotal
 
 [Installer](https://www.virustotal.com/gui/file/6d575a3fc78a5ff2b23f34d4dc795f118bb38c7d35e6dc77de912f692a78dd91/detection)
 
